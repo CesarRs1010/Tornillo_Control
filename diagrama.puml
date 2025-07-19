@@ -1,0 +1,88 @@
+@startuml diagrama.puml
+!define RECTANGLE class
+
+' Definición de las clases principales
+class Main {
+    +public static void main(String[] args)
+}
+
+class CategoriaPanel {
+    +void mostrarCategorias()
+}
+
+class OrdenPanel {
+    +void mostrarOrdenes()
+}
+
+class ProductoPanel {
+    +void mostrarProductos()
+}
+
+class RutaPanel {
+    +void mostrarRuta()
+}
+
+class SplashScreen {
+    +void mostrarSplash()
+}
+
+class Producto {
+    +String nombre
+    +double precio
+}
+
+class Orden {
+    +int id
+    +String estado
+}
+
+class CategoriaNodo {
+    +String nombreCategoria
+}
+
+class NodoAlmacen {
+    +String ubicacion
+    +int cantidad
+}
+
+class GrafoAlmacen {
+    +void agregarNodo(NodoAlmacen)
+}
+
+class InventarioService {
+    +boolean venderProducto(Producto producto, int cantidad)
+}
+
+class OrdenService {
+    +void registrarOrden(Orden orden)
+}
+
+' Relaciones entre las clases
+Main --> CategoriaPanel : interactúa con >
+Main --> OrdenPanel : interactúa con >
+Main --> ProductoPanel : interactúa con >
+Main --> RutaPanel : interactúa con >
+Main --> SplashScreen : interactúa con >
+
+CategoriaPanel --> CategoriaNodo : contiene >
+OrdenPanel --> Orden : maneja >
+ProductoPanel --> Producto : maneja >
+RutaPanel --> GrafoAlmacen : gestiona >
+Producto --> Orden : aparece en >
+Orden --> Producto : incluye >
+InventarioService --> Producto : gestiona >
+OrdenService --> Orden : gestiona >
+
+' Relaciones de agregación y asociación entre clases
+CategoriaPanel --> OrdenPanel : depende de >
+OrdenPanel --> ProductoPanel : maneja >
+OrdenService --> ProductoPanel : interacciones >
+GrafoAlmacen --> NodoAlmacen : almacena >
+OrdenService --> InventarioService : interactúa con >
+
+' Relaciones de dependencia
+ProductoPanel -down-> Producto : necesita >
+OrdenService -down-> Producto : procesa >
+
+' Herencia si aplica (si hubiera alguna)
+@enduml
