@@ -1,66 +1,37 @@
 package servicios;
 
+import modelo.Producto;
+import estructuras.ArbolProducto;
 import java.sql.*;
 import java.util.ArrayList;
-import modelo.Producto;
+import java.util.HashMap;
 
 public class InventarioService {
 
-    // Obtiene el ID de la categoría desde la base de datos, dado su nombre
-    private int obtenerIdCategoriaPorNombre(String nombreCategoria) {
-        String sql = "SELECT id FROM categorias WHERE nombre = ?";
-        try (Connection conn = ConexionBD.conectar();  // Establece la conexión con la base de datos
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, nombreCategoria);  // Establece el nombre de la categoría en el query
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                return rs.getInt("id");  // Retorna el ID de la categoría
-            } else {
-                System.out.println("Categoría no encontrada: " + nombreCategoria);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
-        }
-        return -1;  // Retorna -1 si no se encuentra la categoría
+    // --- ESTRUCTURAS DE DATOS EN MEMORIA ---
+    // Mapa para acceso instantáneo (O(1)) a productos por su código. Esta es la fuente de verdad principal en memoria.
+    private HashMap<String, Producto> mapaProductos;
+    // Árbol para búsqueda eficiente (O(log n)) por nombre de producto.
+    private ArbolProducto arbolPorNombre;
+
+    // Constructor: Carga los datos de la BD a las estructuras en memoria al iniciar el servicio.
+    public InventarioService() {
+        this.mapaProductos = new HashMap<>();
+        this.arbolPorNombre = new ArbolProducto();
+        cargarDatosDesdeBD();
     }
 
-    // Agrega un producto a la base de datos
-    public void agregarProducto(Producto p) {
-        try (Connection conn = ConexionBD.conectar()) {
-            int categoriaId = obtenerIdCategoriaPorNombre(p.getCategoria());  // Obtiene el ID de la categoría
-            if (categoriaId == -1) {
-                System.out.println("No se pudo agregar el producto porque la categoría no existe.");
-                return;  // Si la categoría no existe, no se agrega el producto
-            }
-
-            // Inserta el producto en la base de datos
-            String sql = "INSERT INTO productos (codigo, nombre, categoria_id, cantidad, precio) VALUES (?, ?, ?, ?, ?)";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, p.getCodigo());
-            stmt.setString(2, p.getNombre());
-            stmt.setInt(3, categoriaId);  // Usa el ID de la categoría
-            stmt.setInt(4, p.getCantidad());
-            stmt.setDouble(5, p.getPrecio());
-            stmt.executeUpdate();  // Ejecuta la inserción
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
-        }
-    }
-
-    // Obtiene todos los productos desde la base de datos
-    public ArrayList<Producto> obtenerProductos() {
-        ArrayList<Producto> lista = new ArrayList<>();
-        // Realiza una consulta JOIN entre productos y categorías para obtener los productos junto con sus categorías
+    // Carga inicial de datos desde la base de datos a las estructuras en memoria.
+    private void cargarDatosDesdeBD() {
+        System.out.println("Cargando productos desde la base de datos a memoria...");
         String sql = "SELECT p.codigo, p.nombre, c.nombre AS categoria, p.cantidad, p.precio " +
-                     "FROM productos p " +
-                     "JOIN categorias c ON p.categoria_id = c.id";
+                     "FROM productos p JOIN categorias c ON p.categoria_id = c.id";
 
-        try (Connection conn = ConexionBD.conectar();  // Establece la conexión con la base de datos
-             Statement stmt = conn.createStatement();  // Crea el Statement
-             ResultSet rs = stmt.executeQuery(sql)) {  // Ejecuta la consulta
+        try (Connection conn = ConexionBD.conectar();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
 
             while (rs.next()) {
-                // Por cada resultado, crea un objeto Producto y lo agrega a la lista
                 Producto p = new Producto(
                         rs.getString("codigo"),
                         rs.getString("nombre"),
@@ -68,131 +39,152 @@ public class InventarioService {
                         rs.getInt("cantidad"),
                         rs.getDouble("precio")
                 );
-                lista.add(p);  // Agrega el producto a la lista
+                // Poblar ambas estructuras en memoria
+                mapaProductos.put(p.getCodigo(), p);
+                arbolPorNombre.insertar(p);
             }
+            System.out.println("Carga completada. " + mapaProductos.size() + " productos en memoria.");
         } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
-        }
-        return lista;  // Retorna la lista de productos
-    }
-
-    // Elimina un producto de la base de datos por su código
-    public void eliminarProducto(String codigo) {
-        try (Connection conn = ConexionBD.conectar()) {
-            // Elimina el producto con el código proporcionado
-            String sql = "DELETE FROM productos WHERE codigo = ?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, codigo);  // Establece el código del producto a eliminar
-            stmt.executeUpdate();  // Ejecuta la eliminación
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
+            e.printStackTrace();
         }
     }
 
-    // Actualiza los detalles de un producto existente en la base de datos
-    public void actualizarProducto(Producto actualizado) {
-        try (Connection conn = ConexionBD.conectar()) {
-            int categoriaId = obtenerIdCategoriaPorNombre(actualizado.getCategoria());  // Obtiene el ID de la categoría
-            if (categoriaId == -1) {
-                System.out.println("No se pudo actualizar el producto porque la categoría no existe.");
-                return;  // Si la categoría no existe, no se actualiza el producto
-            }
+    // --- MÉTODOS PÚBLICOS (OPERAN EN MEMORIA PRIMERO) ---
 
-            // Actualiza el producto en la base de datos
-            String sql = "UPDATE productos SET nombre = ?, categoria_id = ?, cantidad = ?, precio = ? WHERE codigo = ?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, actualizado.getNombre());
-            stmt.setInt(2, categoriaId);  // Usa el ID de la categoría
-            stmt.setInt(3, actualizado.getCantidad());
-            stmt.setDouble(4, actualizado.getPrecio());
-            stmt.setString(5, actualizado.getCodigo());  // Establece el código del producto
-            stmt.executeUpdate();  // Ejecuta la actualización
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
-        }
+    // Obtiene todos los productos desde el mapa en memoria. Es muy rápido.
+    public ArrayList<Producto> obtenerProductos() {
+        return new ArrayList<>(mapaProductos.values());
     }
 
-    // Busca un producto por su nombre
-    public Producto buscarPorNombre(String nombre) {
-        String sql = "SELECT p.codigo, p.nombre, c.nombre AS categoria, p.cantidad, p.precio " +
-                     "FROM productos p " +
-                     "JOIN categorias c ON p.categoria_id = c.id " +
-                     "WHERE p.nombre = ?";
-
-        try (Connection conn = ConexionBD.conectar();  // Establece la conexión con la base de datos
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, nombre);  // Establece el nombre del producto en la consulta
-            ResultSet rs = stmt.executeQuery();  // Ejecuta la consulta
-            if (rs.next()) {
-                // Si encuentra el producto, lo crea y lo retorna
-                return new Producto(
-                        rs.getString("codigo"),
-                        rs.getString("nombre"),
-                        rs.getString("categoria"),
-                        rs.getInt("cantidad"),
-                        rs.getDouble("precio")
-                );
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
-        }
-        return null;  // Si no encuentra el producto, retorna null
-    }
-
-    // Vende un producto, reduciendo su cantidad en el inventario
-    public boolean venderProducto(String codigo, int cantidadVendida) {
-        try (Connection conn = ConexionBD.conectar()) {
-            // Consulta el stock actual del producto
-            String consulta = "SELECT cantidad FROM productos WHERE codigo = ?";
-            PreparedStatement stmtConsulta = conn.prepareStatement(consulta);
-            stmtConsulta.setString(1, codigo);  // Establece el código del producto
-            ResultSet rs = stmtConsulta.executeQuery();
-
-            if (rs.next()) {
-                int stockActual = rs.getInt("cantidad");
-                if (cantidadVendida > stockActual) {
-                    System.out.println("No hay suficiente stock.");
-                    return false;  // Si no hay suficiente stock, no se realiza la venta
-                }
-
-                // Actualiza el stock del producto después de la venta
-                String actualizacion = "UPDATE productos SET cantidad = cantidad - ? WHERE codigo = ?";
-                PreparedStatement stmtUpdate = conn.prepareStatement(actualizacion);
-                stmtUpdate.setInt(1, cantidadVendida);
-                stmtUpdate.setString(2, codigo);  // Establece el código del producto
-                stmtUpdate.executeUpdate();  // Ejecuta la actualización
-                return true;  // Venta realizada con éxito
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
-        }
-        return false;  // Si no se pudo vender el producto, retorna false
-    }
-
-    // Busca un producto por su código
+    // Busca un producto por código usando el HashMap. Eficiencia O(1).
     public Producto buscarPorCodigo(String codigo) {
-        String sql = "SELECT p.codigo, p.nombre, c.nombre AS categoria, p.cantidad, p.precio " +
-                     "FROM productos p " +
-                     "JOIN categorias c ON p.categoria_id = c.id " +
-                     "WHERE p.codigo = ?";
+        return mapaProductos.get(codigo);
+    }
 
-        try (Connection conn = ConexionBD.conectar();  // Establece la conexión con la base de datos
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, codigo);  // Establece el código del producto en la consulta
-            ResultSet rs = stmt.executeQuery();  // Ejecuta la consulta
-            if (rs.next()) {
-                // Si encuentra el producto, lo crea y lo retorna
-                return new Producto(
-                        rs.getString("codigo"),
-                        rs.getString("nombre"),
-                        rs.getString("categoria"),
-                        rs.getInt("cantidad"),
-                        rs.getDouble("precio")
-                );
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();  // Si ocurre un error, lo imprime en la consola
+    // Busca un producto por nombre usando el Árbol Binario de Búsqueda. Eficiencia O(log n).
+    public Producto buscarPorNombre(String nombre) {
+        return arbolPorNombre.buscarPorNombre(nombre);
+    }
+
+    // Agrega un producto a la BD y luego a las estructuras en memoria.
+    public void agregarProducto(Producto p) {
+        // 1. Intentar insertar en la BD primero para asegurar persistencia.
+        if (agregarProductoEnBD(p)) {
+            // 2. Si la inserción en BD es exitosa, actualizar las estructuras en memoria.
+            mapaProductos.put(p.getCodigo(), p);
+            arbolPorNombre.insertar(p);
         }
-        return null;  // Si no encuentra el producto, retorna null
+    }
+
+    // Actualiza un producto en la BD y luego en las estructuras en memoria.
+    public void actualizarProducto(Producto actualizado) {
+        // 1. Intentar actualizar en la BD.
+        if (actualizarProductoEnBD(actualizado)) {
+            // 2. Si es exitoso, actualizar el mapa en memoria.
+            mapaProductos.put(actualizado.getCodigo(), actualizado);
+            // 3. Re-sincronizar el árbol para reflejar los cambios (más simple que eliminar y reinsertar).
+            sincronizarArbol();
+        }
+    }
+
+    // Elimina un producto de la BD y luego de las estructuras en memoria.
+    public void eliminarProducto(String codigo) {
+        // 1. Intentar eliminar de la BD.
+        if (eliminarProductoEnBD(codigo)) {
+            // 2. Si es exitoso, eliminar del mapa en memoria.
+            mapaProductos.remove(codigo);
+            // 3. Re-sincronizar el árbol.
+            sincronizarArbol();
+        }
+    }
+
+    // Vende un producto, actualizando primero la memoria y luego la BD.
+    public boolean venderProducto(String codigo, int cantidadVendida) {
+        // 1. Validar la operación contra los datos en memoria (más rápido).
+        Producto productoEnStock = mapaProductos.get(codigo);
+        if (productoEnStock == null || productoEnStock.getCantidad() < cantidadVendida) {
+            System.out.println("Venta rechazada: No hay suficiente stock en memoria.");
+            return false;
+        }
+
+        // 2. Intentar actualizar la BD.
+        if (venderProductoEnBD(codigo, cantidadVendida)) {
+            // 3. Si la venta en BD es exitosa, actualizar el objeto en memoria.
+            productoEnStock.setCantidad(productoEnStock.getCantidad() - cantidadVendida);
+            return true;
+        }
+        return false;
+    }
+
+    // --- MÉTODOS PRIVADOS PARA INTERACCIÓN CON LA BASE DE DATOS ---
+
+    private boolean agregarProductoEnBD(Producto p) {
+        String sql = "INSERT INTO productos (codigo, nombre, categoria_id, cantidad, precio) VALUES (?, ?, (SELECT id FROM categorias WHERE nombre = ?), ?, ?)";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, p.getCodigo());
+            stmt.setString(2, p.getNombre());
+            stmt.setString(3, p.getCategoria());
+            stmt.setInt(4, p.getCantidad());
+            stmt.setDouble(5, p.getPrecio());
+            stmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private boolean actualizarProductoEnBD(Producto p) {
+        String sql = "UPDATE productos SET nombre = ?, categoria_id = (SELECT id FROM categorias WHERE nombre = ?), cantidad = ?, precio = ? WHERE codigo = ?";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, p.getNombre());
+            stmt.setString(2, p.getCategoria());
+            stmt.setInt(3, p.getCantidad());
+            stmt.setDouble(4, p.getPrecio());
+            stmt.setString(5, p.getCodigo());
+            stmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+    
+    private boolean eliminarProductoEnBD(String codigo) {
+        String sql = "DELETE FROM productos WHERE codigo = ?";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, codigo);
+            stmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private boolean venderProductoEnBD(String codigo, int cantidadVendida) {
+        String sql = "UPDATE productos SET cantidad = cantidad - ? WHERE codigo = ? AND cantidad >= ?";
+        try (Connection conn = ConexionBD.conectar();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, cantidadVendida);
+            stmt.setString(2, codigo);
+            stmt.setInt(3, cantidadVendida); // Condición para evitar stock negativo
+            int filasAfectadas = stmt.executeUpdate();
+            return filasAfectadas > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Reconstruye el árbol desde el mapa para mantener la consistencia.
+    private void sincronizarArbol() {
+        arbolPorNombre.limpiar();
+        for (Producto p : mapaProductos.values()) {
+            arbolPorNombre.insertar(p);
+        }
     }
 }

@@ -6,6 +6,11 @@ public class ArbolProducto {
     // Nodo raíz del árbol de productos
     private NodoProducto raiz;
 
+    // Método público para limpiar o vaciar el árbol.
+    public void limpiar() {
+        this.raiz = null;
+    }
+
     // Método público para insertar un producto en el árbol
     public void insertar(Producto producto) {
         raiz = insertarRec(raiz, producto); // Llama al método recursivo para insertar el producto
@@ -22,12 +27,13 @@ public class ArbolProducto {
         // Si el nombre del producto es menor, se inserta a la izquierda
         if (producto.getNombre().compareToIgnoreCase(nodo.producto.getNombre()) < 0) {
             nodo.izquierda = insertarRec(nodo.izquierda, producto);
-        } else {
-            // Si el nombre es mayor o igual, se inserta a la derecha
+        } else if (producto.getNombre().compareToIgnoreCase(nodo.producto.getNombre()) > 0) {
+            // Si el nombre es mayor, se inserta a la derecha
             nodo.derecha = insertarRec(nodo.derecha, producto);
         }
-
-        return nodo; // Retorna el nodo actual (sin cambios si ya estaba insertado)
+        // Si son iguales, no se inserta para evitar duplicados en el árbol por nombre.
+        
+        return nodo;
     }
 
     // Método público para buscar un producto por su nombre
